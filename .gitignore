@@ -1,4 +1,11 @@
 node_modules/
-dist/
 *.js.map
 .DS_Store
+
+# Rust build artifacts (keep source, exclude compiled binaries)
+gitx1-wasm/target/
+
+# WASM pkg generated files (keep the ones we need in dist/)
+src/wasm/pkg/.gitignore
+src/wasm/pkg/package.json
+src/wasm/pkg/README.md
