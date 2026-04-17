@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitX1 — PR Moderator</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="gx-header">
+      <div class="gx-header__brand">
+        <span class="gx-header__logo">⚡</span>
+        <h1 class="gx-header__title">GitX1</h1>
+        <span class="gx-header__badge">PR Moderator</span>
+      </div>
+    </header>
+
+    <!-- PAT Configuration -->
+    <section id="pat-section" class="gx-card gx-pat-card">
+      <h3 class="gx-card__heading">GitHub Access</h3>
+      <div id="pat-unconfigured" class="gx-pat__setup">
+        <p class="gx-pat__hint">Enter a <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">GitHub PAT</a> with read-only access to enable analysis.</p>
+        <div class="gx-pat__input-row">
+          <input type="password" id="pat-input" class="gx-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
+          <button class="gx-btn gx-btn--small gx-btn--primary" id="btn-save-pat">Save</button>
+        </div>
+        <p class="gx-pat__error" id="pat-error" style="display:none"></p>
+      </div>
+      <div id="pat-configured" class="gx-pat__status" style="display:none">
+        <div class="gx-pat__info">
+          <span class="gx-pat__check">✓</span>
+          <span>Authenticated as <strong id="pat-username">—</strong></span>
+        </div>
+        <div class="gx-pat__meta">
+          <span class="gx-pat__rate" id="pat-rate-limit">— requests remaining</span>
+          <button class="gx-btn gx-btn--tiny gx-btn--ghost" id="btn-remove-pat">Remove</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PR Info Card -->
+    <section id="pr-info" class="gx-card gx-card--empty">
+      <div class="gx-card__empty-state" id="empty-state">
+        <div class="gx-card__empty-icon">🔍</div>
+        <p>Navigate to a GitHub Pull Request to begin analysis.</p>
+      </div>
+      <div class="gx-card__content" id="pr-details" style="display:none">
+        <div class="gx-pr-meta">
+          <span class="gx-pr-meta__repo" id="pr-repo">—</span>
+          <span class="gx-pr-meta__number" id="pr-number">#—</span>
+        </div>
+        <h2 class="gx-pr-title" id="pr-title">—</h2>
+        <p class="gx-pr-author">by <strong id="pr-author">—</strong></p>
+      </div>
+    </section>
+
+    <!-- Layer 1 Instant Triage -->
+    <section id="triage-section" class="gx-card" style="display:none">
+      <div class="gx-triage-header">
+        <h3 class="gx-card__heading">Layer 1 — Instant Triage</h3>
+        <span class="gx-triage-verdict" id="triage-verdict">—</span>
+      </div>
+      <div class="gx-triage-stats">
+        <div class="gx-triage-stat">
+          <span class="gx-triage-stat__value gx-triage-stat--pass" id="triage-passed">0</span>
+          <span class="gx-triage-stat__label">Passed</span>
+        </div>
+        <div class="gx-triage-stat">
+          <span class="gx-triage-stat__value gx-triage-stat--fail" id="triage-failed">0</span>
+          <span class="gx-triage-stat__label">Failed</span>
+        </div>
+        <div class="gx-triage-stat">
+          <span class="gx-triage-stat__value" id="triage-score">0%</span>
+          <span class="gx-triage-stat__label">Score</span>
+        </div>
+      </div>
+      <div class="gx-triage-bar">
+        <div class="gx-triage-bar__fill" id="triage-bar-fill"></div>
+      </div>
+      <div class="gx-triage-checks" id="triage-checks"></div>
+    </section>
+
+    <!-- Score Card -->
+    <section id="score-section" class="gx-card" style="display:none">
+      <div class="gx-score-header">
+        <h3 class="gx-card__heading">Reputation Score</h3>
+        <span class="gx-recommendation" id="recommendation-badge">—</span>
+      </div>
+
+      <div class="gx-score-ring-container">
+        <svg class="gx-score-ring" viewBox="0 0 120 120">
+          <circle class="gx-score-ring__bg" cx="60" cy="60" r="52" />
+          <circle class="gx-score-ring__fg" id="score-ring" cx="60" cy="60" r="52"
+                  stroke-dasharray="326.73" stroke-dashoffset="326.73" />
+        </svg>
+        <div class="gx-score-ring__value" id="score-value">—</div>
+      </div>
+      <p class="gx-score-label" id="score-label">—</p>
+
+      <!-- Heuristic Breakdown -->
+      <div class="gx-breakdown" id="breakdown">
+        <div class="gx-breakdown__row" data-heuristic="accountAge">
+          <span class="gx-breakdown__name">Account Age</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-accountAge"></div></div>
+          <span class="gx-breakdown__val" id="val-accountAge">—</span>
+        </div>
+        <div class="gx-breakdown__row" data-heuristic="profileCompleteness">
+          <span class="gx-breakdown__name">Profile</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-profileCompleteness"></div></div>
+          <span class="gx-breakdown__val" id="val-profileCompleteness">—</span>
+        </div>
+        <div class="gx-breakdown__row" data-heuristic="followerPatterns">
+          <span class="gx-breakdown__name">Followers</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-followerPatterns"></div></div>
+          <span class="gx-breakdown__val" id="val-followerPatterns">—</span>
+        </div>
+        <div class="gx-breakdown__row" data-heuristic="prAcceptanceRate">
+          <span class="gx-breakdown__name">PR Acceptance</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-prAcceptanceRate"></div></div>
+          <span class="gx-breakdown__val" id="val-prAcceptanceRate">—</span>
+        </div>
+        <div class="gx-breakdown__row" data-heuristic="forkTiming">
+          <span class="gx-breakdown__name">Fork Timing</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-forkTiming"></div></div>
+          <span class="gx-breakdown__val" id="val-forkTiming">—</span>
+        </div>
+        <div class="gx-breakdown__row" data-heuristic="activityPatterns">
+          <span class="gx-breakdown__name">Activity</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-activityPatterns"></div></div>
+          <span class="gx-breakdown__val" id="val-activityPatterns">—</span>
+        </div>
+        <div class="gx-breakdown__row" data-heuristic="contributionType">
+          <span class="gx-breakdown__name">Contrib Type</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-contributionType"></div></div>
+          <span class="gx-breakdown__val" id="val-contributionType">—</span>
+        </div>
+        <div class="gx-breakdown__row" data-heuristic="notableContributions">
+          <span class="gx-breakdown__name">Notable OSS</span>
+          <div class="gx-breakdown__bar"><div class="gx-breakdown__fill gx-breakdown__fill--dual" id="bar-notableContributions"></div></div>
+          <span class="gx-breakdown__val" id="val-notableContributions">—</span>
+        </div>
+      </div>
+
+      <p class="gx-summary" id="score-summary">—</p>
+    </section>
+
+    <!-- WASM Structural Analysis -->
+    <section id="wasm-section" class="gx-card" style="display:none">
+      <div class="gx-wasm-header">
+        <h3 class="gx-card__heading">Layer 3 — Structural AST</h3>
+        <span class="gx-wasm-badge" id="wasm-score-badge">—</span>
+      </div>
+      <p class="gx-wasm-subtitle">Powered by Rust/WASM — detects AI structural anomalies in code diffs</p>
+
+      <div class="gx-wasm-input">
+        <button class="gx-btn gx-btn--small gx-btn--primary" id="btn-wasm-auto">
+          <span class="gx-btn__icon">⚡</span> Auto-fetch Diff
+        </button>
+        <details class="gx-wasm-paste">
+          <summary class="gx-wasm-paste__toggle">or paste diff manually</summary>
+          <textarea id="wasm-diff-input" class="gx-input gx-textarea" rows="4" placeholder="Paste a unified diff here..."></textarea>
+          <button class="gx-btn gx-btn--small gx-btn--secondary" id="btn-wasm-manual">Analyze Pasted Diff</button>
+        </details>
+      </div>
+
+      <div id="wasm-results" style="display:none">
+        <div class="gx-wasm-stats">
+          <div class="gx-triage-stat">
+            <span class="gx-triage-stat__value" id="wasm-files">0</span>
+            <span class="gx-triage-stat__label">Files</span>
+          </div>
+          <div class="gx-triage-stat">
+            <span class="gx-triage-stat__value" id="wasm-total">0</span>
+            <span class="gx-triage-stat__label">Findings</span>
+          </div>
+          <div class="gx-triage-stat">
+            <span class="gx-triage-stat__value" id="wasm-score">0</span>
+            <span class="gx-triage-stat__label">Score</span>
+          </div>
+        </div>
+        <div class="gx-triage-bar">
+          <div class="gx-triage-bar__fill" id="wasm-bar-fill"></div>
+        </div>
+        <div class="gx-wasm-severity">
+          <span class="gx-severity-pill gx-severity--high" id="wasm-high">0 high</span>
+          <span class="gx-severity-pill gx-severity--medium" id="wasm-medium">0 medium</span>
+          <span class="gx-severity-pill gx-severity--low" id="wasm-low">0 low</span>
+        </div>
+        <div class="gx-wasm-findings" id="wasm-findings"></div>
+      </div>
+    </section>
+    <!-- Layer 4: AI Text Detection -->
+    <section id="l4-section" class="gx-card" style="display:none">
+      <div class="gx-wasm-header">
+        <h3 class="gx-card__heading">Layer 4 — AI Text Detection</h3>
+        <span class="gx-wasm-badge" id="l4-verdict-badge">—</span>
+      </div>
+      <p class="gx-wasm-subtitle">Multi-engine consensus (adapted from SlopTotal) — 8 engines, 100% local</p>
+
+      <div class="gx-wasm-input">
+        <button class="gx-btn gx-btn--small gx-btn--primary" id="btn-l4-auto">
+          <span class="gx-btn__icon">🧠</span> Analyze PR Description
+        </button>
+        <details class="gx-wasm-paste">
+          <summary class="gx-wasm-paste__toggle">or paste text manually</summary>
+          <textarea id="l4-text-input" class="gx-input gx-textarea" rows="4" placeholder="Paste text to analyze for AI patterns..."></textarea>
+          <button class="gx-btn gx-btn--small gx-btn--secondary" id="btn-l4-manual">Analyze Pasted Text</button>
+        </details>
+      </div>
+
+      <div id="l4-results" style="display:none">
+        <!-- Score + Verdict -->
+        <div class="gx-l4-score-row">
+          <div class="gx-l4-score-big" id="l4-score">0</div>
+          <div class="gx-l4-score-meta">
+            <span class="gx-l4-verdict" id="l4-verdict">—</span>
+            <span class="gx-l4-confidence" id="l4-confidence">—</span>
+            <span class="gx-l4-elapsed" id="l4-elapsed">—</span>
+          </div>
+        </div>
+
+        <!-- Engine Bars -->
+        <div class="gx-l4-engines" id="l4-engines"></div>
+
+        <!-- Human Signals -->
+        <div class="gx-l4-human" id="l4-human" style="display:none">
+          <span class="gx-l4-human__label">Human signals:</span>
+          <span class="gx-l4-human__list" id="l4-human-list"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Actions -->
+    <section id="actions-section" class="gx-actions" style="display:none">
+      <button class="gx-btn gx-btn--primary" id="btn-analyze">
+        <span class="gx-btn__icon">🔬</span>
+        Analyze PR
+      </button>
+      <button class="gx-btn gx-btn--secondary" id="btn-refresh">
+        <span class="gx-btn__icon">↻</span>
+        Refresh
+      </button>
+    </section>
+
+    <!-- Master Verdict -->
+    <section id="master-section" class="gx-card gx-master-card" style="display:none">
+      <div class="gx-master-header">
+        <h3 class="gx-card__heading">Master Verdict</h3>
+        <span class="gx-master-tier" id="master-tier">—</span>
+      </div>
+
+      <!-- Score Ring -->
+      <div class="gx-master-score-row">
+        <div class="gx-master-ring">
+          <svg viewBox="0 0 120 120" width="80" height="80">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--gx-border)" stroke-width="8"/>
+            <circle cx="60" cy="60" r="52" fill="none" stroke-width="8"
+              stroke-dasharray="326.73" stroke-dashoffset="326.73"
+              stroke-linecap="round" id="master-ring-fill"
+              transform="rotate(-90 60 60)" />
+          </svg>
+          <span class="gx-master-ring__value" id="master-score">—</span>
+        </div>
+        <div class="gx-master-meta">
+          <span class="gx-master-verdict" id="master-verdict-label">Awaiting Analysis</span>
+          <span class="gx-master-desc" id="master-desc">Run all layers or click Full Scan</span>
+        </div>
+      </div>
+
+      <!-- Skip Banner -->
+      <div class="gx-master-skip" id="master-skip" style="display:none">
+        <span class="gx-master-skip__icon">⚡</span>
+        <span class="gx-master-skip__text" id="master-skip-text"></span>
+      </div>
+
+      <!-- Layer Breakdown -->
+      <div class="gx-master-layers">
+        <div class="gx-master-layer" id="ml-l1">
+          <div class="gx-master-layer__head">
+            <span class="gx-master-layer__num">L1</span>
+            <span class="gx-master-layer__title">Metadata Rules</span>
+            <span class="gx-master-layer__pill" id="ml-l1-pill">pending</span>
+          </div>
+          <div class="gx-master-layer__bar-bg"><div class="gx-master-layer__bar-fill" id="ml-l1-bar"></div></div>
+          <span class="gx-master-layer__detail" id="ml-l1-detail">—</span>
+        </div>
+
+        <div class="gx-master-layer" id="ml-l2">
+          <div class="gx-master-layer__head">
+            <span class="gx-master-layer__num">L2</span>
+            <span class="gx-master-layer__title">Reputation</span>
+            <span class="gx-master-layer__pill" id="ml-l2-pill">pending</span>
+          </div>
+          <div class="gx-master-layer__bar-bg"><div class="gx-master-layer__bar-fill" id="ml-l2-bar"></div></div>
+          <span class="gx-master-layer__detail" id="ml-l2-detail">—</span>
+        </div>
+
+        <div class="gx-master-layer" id="ml-l3">
+          <div class="gx-master-layer__head">
+            <span class="gx-master-layer__num">L3</span>
+            <span class="gx-master-layer__title">WASM AST</span>
+            <span class="gx-master-layer__pill" id="ml-l3-pill">pending</span>
+          </div>
+          <div class="gx-master-layer__bar-bg"><div class="gx-master-layer__bar-fill" id="ml-l3-bar"></div></div>
+          <span class="gx-master-layer__detail" id="ml-l3-detail">—</span>
+        </div>
+
+        <div class="gx-master-layer" id="ml-l4">
+          <div class="gx-master-layer__head">
+            <span class="gx-master-layer__num">L4</span>
+            <span class="gx-master-layer__title">AI Detection</span>
+            <span class="gx-master-layer__pill" id="ml-l4-pill">pending</span>
+          </div>
+          <div class="gx-master-layer__bar-bg"><div class="gx-master-layer__bar-fill" id="ml-l4-bar"></div></div>
+          <span class="gx-master-layer__detail" id="ml-l4-detail">—</span>
+        </div>
+      </div>
+
+      <!-- Full Scan Button -->
+      <button class="gx-btn gx-btn--primary gx-btn--full" id="btn-full-scan">
+        <span class="gx-btn__icon">🚀</span> Full Scan — All Layers
+      </button>
+    </section>
+
+    <!-- Status bar -->
+    <footer class="gx-footer">
+      <span class="gx-status" id="status-text">Idle</span>
+    </footer>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
