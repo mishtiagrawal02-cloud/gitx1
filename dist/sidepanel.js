@@ -1154,6 +1154,177 @@ async function detectSlop(text) {
     };
 }
 
+;// ./src/analysis/code-text-extractor.ts
+/**
+ * Extracts human-readable text from a unified diff for AI text detection.
+ *
+ * Scans added lines for: comments, docstrings, string literals,
+ * log/error messages, function/variable names, and inline documentation.
+ *
+ * This lets L4 detect AI-generated patterns in the actual pushed code,
+ * not just the PR description.
+ */
+/** Extract comments and documentation from code diff lines */
+function extractTextFromDiff(diffText) {
+    const lines = diffText.split("\n");
+    const comments = [];
+    const stringLiterals = [];
+    const functionNames = [];
+    const logMessages = [];
+    const variableNames = [];
+    let inMultiLineComment = false;
+    let multiLineBuffer = "";
+    let currentFile = "";
+    for (const line of lines) {
+        // Track current file
+        if (line.startsWith("+++ b/")) {
+            currentFile = line.slice(6);
+            continue;
+        }
+        // Only look at added lines (the code being pushed)
+        if (!line.startsWith("+") || line.startsWith("+++"))
+            continue;
+        const code = line.slice(1).trim(); // Remove leading "+"
+        if (!code)
+            continue;
+        // ── Multi-line comment tracking ──
+        if (inMultiLineComment) {
+            multiLineBuffer += " " + code.replace(/\*\/$/, "").replace(/^\*\s?/, "");
+            if (code.includes("*/")) {
+                inMultiLineComment = false;
+                if (multiLineBuffer.trim().length > 10) {
+                    comments.push(multiLineBuffer.trim());
+                }
+                multiLineBuffer = "";
+            }
+            continue;
+        }
+        // ── Block comment start ──
+        if (code.startsWith("/*") || code.startsWith("/**")) {
+            inMultiLineComment = true;
+            multiLineBuffer = code.replace(/^\/\*\*?\s?/, "").replace(/\*\/$/, "");
+            if (code.includes("*/")) {
+                inMultiLineComment = false;
+                if (multiLineBuffer.trim().length > 10) {
+                    comments.push(multiLineBuffer.trim());
+                }
+                multiLineBuffer = "";
+            }
+            continue;
+        }
+        // ── Single-line comments ──
+        if (code.startsWith("//") || code.startsWith("#")) {
+            const comment = code.replace(/^\/\/\s?/, "").replace(/^#\s?/, "").trim();
+            if (comment.length > 5 && !comment.startsWith("eslint") && !comment.startsWith("@ts-")) {
+                comments.push(comment);
+            }
+            continue;
+        }
+        // ── Python docstrings ──
+        if (code.startsWith('"""') || code.startsWith("'''")) {
+            const doc = code.replace(/^['"]{3}\s?/, "").replace(/['"]{3}$/, "").trim();
+            if (doc.length > 10) {
+                comments.push(doc);
+            }
+            continue;
+        }
+        // ── Console/log messages ──
+        const logMatch = code.match(/(?:console\.(?:log|warn|error|info)|print|println!?|logger\.\w+)\s*\(\s*[`'"](.*?)[`'"]/);
+        if (logMatch?.[1] && logMatch[1].length > 10) {
+            logMessages.push(logMatch[1]);
+        }
+        // ── Error messages ──
+        const errorMatch = code.match(/(?:throw\s+new\s+\w*Error|raise\s+\w*Error|Error)\s*\(\s*[`'"](.*?)[`'"]/);
+        if (errorMatch?.[1] && errorMatch[1].length > 10) {
+            logMessages.push(errorMatch[1]);
+        }
+        // ── String literals (longer ones that might be AI-generated) ──
+        const stringMatches = code.match(/[`'"]((?:[^`'"\\]|\\.){30,})[`'"]/g);
+        if (stringMatches) {
+            for (const s of stringMatches) {
+                const clean = s.slice(1, -1).trim();
+                if (clean.length > 30 && !clean.includes("http") && !clean.match(/^[\w/.-]+$/)) {
+                    stringLiterals.push(clean);
+                }
+            }
+        }
+        // ── Function names (for naming pattern analysis) ──
+        const funcMatch = code.match(/(?:function|def|fn|func)\s+(\w+)/);
+        if (funcMatch?.[1]) {
+            functionNames.push(funcMatch[1]);
+        }
+        const arrowMatch = code.match(/(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(/);
+        if (arrowMatch?.[1]) {
+            functionNames.push(arrowMatch[1]);
+        }
+        // ── Variable names with descriptive comments ──
+        const inlineComment = code.match(/\/\/\s*(.{10,})$/);
+        if (inlineComment?.[1]) {
+            comments.push(inlineComment[1].trim());
+        }
+    }
+    return {
+        comments,
+        stringLiterals,
+        functionNames,
+        logMessages,
+        variableNames,
+        currentFile,
+        totalAddedLines: lines.filter(l => l.startsWith("+") && !l.startsWith("+++")).length,
+    };
+}
+/** Build a combined text block for L4 analysis from extracted code text */
+function buildCodeAnalysisText(extracted) {
+    const sections = [];
+    if (extracted.comments.length > 0) {
+        sections.push("Code Comments:\n" + extracted.comments.join("\n"));
+    }
+    if (extracted.logMessages.length > 0) {
+        sections.push("Log/Error Messages:\n" + extracted.logMessages.join("\n"));
+    }
+    if (extracted.stringLiterals.length > 0) {
+        sections.push("String Literals:\n" + extracted.stringLiterals.join("\n"));
+    }
+    if (extracted.functionNames.length > 5) {
+        sections.push("Function Names:\n" + extracted.functionNames.join(", "));
+    }
+    return sections.join("\n\n");
+}
+/** Analyze function naming patterns for AI-generated code signals */
+function analyzeNamingPatterns(names) {
+    if (names.length < 3) {
+        return { score: 0, signals: [], isAiLikely: false };
+    }
+    const signals = [];
+    let score = 0;
+    // AI tends to use verbose, descriptive camelCase names
+    const avgLength = names.reduce((sum, n) => sum + n.length, 0) / names.length;
+    if (avgLength > 25) {
+        score += 20;
+        signals.push(`Very long function names (avg ${Math.round(avgLength)} chars)`);
+    }
+    // AI loves "handle", "process", "validate", "initialize", "configure"
+    const aiPrefixes = ["handle", "process", "validate", "initialize", "configure", "setup", "create", "update", "fetch", "get"];
+    const aiPrefixCount = names.filter(n => aiPrefixes.some(p => n.toLowerCase().startsWith(p))).length;
+    const aiPrefixRatio = aiPrefixCount / names.length;
+    if (aiPrefixRatio > 0.6 && names.length >= 5) {
+        score += 15;
+        signals.push(`${Math.round(aiPrefixRatio * 100)}% of functions use generic AI prefixes`);
+    }
+    // AI-generated code often has very uniform naming patterns
+    const camelCaseCount = names.filter(n => /^[a-z]+[A-Z]/.test(n)).length;
+    const camelRatio = camelCaseCount / names.length;
+    if (camelRatio > 0.9 && names.length >= 5) {
+        score += 10;
+        signals.push("100% uniform camelCase naming");
+    }
+    return {
+        score: Math.min(score, 50),
+        signals,
+        isAiLikely: score >= 25,
+    };
+}
+
 ;// ./src/analysis/master-controller.ts
 /**
  * ──────────────────────────────────────────────
@@ -1874,6 +2045,7 @@ async function initWasm() {
     }
 }
 async function runWasmOnDiff(diffText) {
+    cachedDiffText = diffText; // Cache for L4 code analysis
     setStatus("Loading WASM module…");
     const ready = await initWasm();
     if (!ready || !wasmAnalyzeDiff) {
@@ -2011,6 +2183,9 @@ els.btnWasmManual.addEventListener("click", async () => {
 });
 // ── Layer 4: AI Text Detection ────────────────
 
+
+/** Cached diff text from L3, reused by L4 to analyze actual code */
+let cachedDiffText = null;
 function showL4Results(result) {
     els.l4Results.style.display = "block";
     // Score
@@ -2064,16 +2239,45 @@ function showL4Results(result) {
         els.l4Human.style.display = "none";
     }
 }
-async function runL4Analysis(text) {
+async function runL4Analysis(text, diffText) {
     setStatus("Running AI text detection…");
     els.btnL4Auto.disabled = true;
     els.btnL4Auto.textContent = "Analyzing…";
     try {
-        const result = await detectSlop(text);
+        // ── Combine PR description with code text from the diff ──
+        let fullTextToAnalyze = text;
+        let codeTextExtracted = "";
+        let namingSignals = [];
+        if (diffText) {
+            const extracted = extractTextFromDiff(diffText);
+            codeTextExtracted = buildCodeAnalysisText(extracted);
+            if (codeTextExtracted.length > 20) {
+                fullTextToAnalyze += "\n\n--- Code Analysis ---\n" + codeTextExtracted;
+            }
+            // Run naming pattern analysis
+            if (extracted.functionNames.length >= 3) {
+                const naming = analyzeNamingPatterns(extracted.functionNames);
+                namingSignals = naming.signals;
+            }
+            console.log(`[GitX1 L4] Code extraction: ${extracted.comments.length} comments, ` +
+                `${extracted.logMessages.length} log messages, ` +
+                `${extracted.stringLiterals.length} string literals, ` +
+                `${extracted.functionNames.length} function names from ${extracted.totalAddedLines} added lines`);
+        }
+        const result = await detectSlop(fullTextToAnalyze);
+        // Merge naming signals into human signals
+        if (namingSignals.length > 0) {
+            result.humanSignals = [...(result.humanSignals || []), ...namingSignals.map(s => `⚠ ${s}`)];
+        }
+        // Add source info to the result
+        if (diffText) {
+            result.confidence = result.nanoAvailable ? "high" : "medium (description + code)";
+        }
         showL4Results(result);
         feedLayer4(result);
         refreshMasterVerdict();
-        setStatus(`Text analysis complete ✓ (${result.elapsedMs}ms)`);
+        const codeNote = diffText ? " (description + code)" : "";
+        setStatus(`Text analysis complete ✓ (${result.elapsedMs}ms)${codeNote}`);
     }
     catch (err) {
         console.error("[GitX1] L4 analysis error:", err);
@@ -2081,10 +2285,10 @@ async function runL4Analysis(text) {
     }
     finally {
         els.btnL4Auto.disabled = false;
-        els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description';
+        els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description & Code';
     }
 }
-// L4 Auto: extract description from content script
+// L4 Auto: extract description + code from content script and diff
 els.btnL4Auto.addEventListener("click", async () => {
     if (!currentPR) {
         await ensureCurrentPR();
@@ -2093,11 +2297,11 @@ els.btnL4Auto.addEventListener("click", async () => {
         setStatus("No active PR");
         return;
     }
-    setStatus("Extracting PR description…");
+    setStatus("Extracting PR description & code…");
     els.btnL4Auto.disabled = true;
     els.btnL4Auto.textContent = "Extracting…";
     try {
-        // Send message to content script via background
+        // 1. Get PR description from content script
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) {
             setStatus("No active tab found");
@@ -2109,23 +2313,39 @@ els.btnL4Auto.addEventListener("click", async () => {
         });
         const description = response?.payload?.description ?? "";
         const codeComments = response?.payload?.codeComments ?? [];
-        // Combine description + comments for analysis
         let textToAnalyze = description;
         if (codeComments.length > 0) {
             textToAnalyze += "\n\n" + codeComments.join("\n\n");
         }
-        if (textToAnalyze.trim().length < 50) {
-            setStatus("PR description too short to analyze");
+        // 2. Fetch diff if not already cached
+        if (!cachedDiffText && currentPR) {
+            try {
+                const diffResp = await chrome.runtime.sendMessage({
+                    action: ACTION.REQUEST_PR_DIFF,
+                    payload: {
+                        owner: currentPR.owner,
+                        repo: currentPR.repo,
+                        prNumber: currentPR.prNumber,
+                    },
+                });
+                if (diffResp?.payload?.diff) {
+                    cachedDiffText = diffResp.payload.diff;
+                }
+            }
+            catch { /* diff fetch optional */ }
+        }
+        if (textToAnalyze.trim().length < 50 && !cachedDiffText) {
+            setStatus("PR description too short and no code diff available");
             els.btnL4Auto.disabled = false;
-            els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description';
+            els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description & Code';
             return;
         }
-        await runL4Analysis(textToAnalyze);
+        await runL4Analysis(textToAnalyze, cachedDiffText ?? undefined);
     }
     catch (err) {
-        setStatus("Failed to extract PR description");
+        setStatus("Failed to extract PR data");
         els.btnL4Auto.disabled = false;
-        els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description';
+        els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description & Code';
     }
 });
 // L4 Manual
@@ -2322,9 +2542,9 @@ els.btnFullScan.addEventListener("click", async () => {
         catch {
             setMasterLayerState("l3", "error");
         }
-        // ── Step 3: L4 AI Text Detection ──
+        // ── Step 3: L4 AI Text Detection (description + code) ──
         setMasterLayerState("l4", "running");
-        setStatus("[3/4] Running AI text detection…");
+        setStatus("[3/4] Running AI text detection on description & code…");
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (tab?.id) {
@@ -2338,8 +2558,8 @@ els.btnFullScan.addEventListener("click", async () => {
                 if (codeComments.length > 0) {
                     textToAnalyze += "\n\n" + codeComments.join("\n\n");
                 }
-                if (textToAnalyze.trim().length >= 50) {
-                    await runL4Analysis(textToAnalyze);
+                if (textToAnalyze.trim().length >= 50 || cachedDiffText) {
+                    await runL4Analysis(textToAnalyze, cachedDiffText ?? undefined);
                 }
                 else {
                     setMasterLayerState("l4", "pending");

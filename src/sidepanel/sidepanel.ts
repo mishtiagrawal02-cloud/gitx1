@@ -596,6 +596,7 @@ async function initWasm(): Promise<boolean> {
 }
 
 async function runWasmOnDiff(diffText: string): Promise<void> {
+  cachedDiffText = diffText; // Cache for L4 code analysis
   setStatus("Loading WASM module…");
   const ready = await initWasm();
   if (!ready || !wasmAnalyzeDiff) {
@@ -746,6 +747,10 @@ els.btnWasmManual.addEventListener("click", async () => {
 // ── Layer 4: AI Text Detection ────────────────
 
 import { detectSlop, type SlopDetectionResult } from "../analysis/slop-detector";
+import { extractTextFromDiff, buildCodeAnalysisText, analyzeNamingPatterns } from "../analysis/code-text-extractor";
+
+/** Cached diff text from L3, reused by L4 to analyze actual code */
+let cachedDiffText: string | null = null;
 
 function showL4Results(result: SlopDetectionResult): void {
   els.l4Results.style.display = "block";
@@ -807,27 +812,65 @@ function showL4Results(result: SlopDetectionResult): void {
   }
 }
 
-async function runL4Analysis(text: string): Promise<void> {
+async function runL4Analysis(text: string, diffText?: string): Promise<void> {
   setStatus("Running AI text detection…");
   els.btnL4Auto.disabled = true;
   els.btnL4Auto.textContent = "Analyzing…";
 
   try {
-    const result = await detectSlop(text);
+    // ── Combine PR description with code text from the diff ──
+    let fullTextToAnalyze = text;
+    let codeTextExtracted = "";
+    let namingSignals: string[] = [];
+
+    if (diffText) {
+      const extracted = extractTextFromDiff(diffText);
+      codeTextExtracted = buildCodeAnalysisText(extracted);
+
+      if (codeTextExtracted.length > 20) {
+        fullTextToAnalyze += "\n\n--- Code Analysis ---\n" + codeTextExtracted;
+      }
+
+      // Run naming pattern analysis
+      if (extracted.functionNames.length >= 3) {
+        const naming = analyzeNamingPatterns(extracted.functionNames);
+        namingSignals = naming.signals;
+      }
+
+      console.log(`[GitX1 L4] Code extraction: ${extracted.comments.length} comments, ` +
+        `${extracted.logMessages.length} log messages, ` +
+        `${extracted.stringLiterals.length} string literals, ` +
+        `${extracted.functionNames.length} function names from ${extracted.totalAddedLines} added lines`);
+    }
+
+    const result = await detectSlop(fullTextToAnalyze);
+
+    // Merge naming signals into human signals
+    if (namingSignals.length > 0) {
+      result.humanSignals = [...(result.humanSignals || []), ...namingSignals.map(s => `⚠ ${s}`)];
+    }
+
+    // Add source info to the result
+    if (diffText) {
+      (result as any).confidence = result.nanoAvailable ? "high" : "medium (description + code)";
+    }
+
     showL4Results(result);
     feedLayer4(result);
     refreshMasterVerdict();
-    setStatus(`Text analysis complete ✓ (${result.elapsedMs}ms)`);
+
+    const codeNote = diffText ? " (description + code)" : "";
+    setStatus(`Text analysis complete ✓ (${result.elapsedMs}ms)${codeNote}`);
   } catch (err) {
     console.error("[GitX1] L4 analysis error:", err);
     setStatus("Text analysis failed");
   } finally {
     els.btnL4Auto.disabled = false;
-    els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description';
+    els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description & Code';
   }
 }
 
-// L4 Auto: extract description from content script
+// L4 Auto: extract description + code from content script and diff
 els.btnL4Auto.addEventListener("click", async () => {
   if (!currentPR) {
     await ensureCurrentPR();
@@ -837,12 +880,12 @@ els.btnL4Auto.addEventListener("click", async () => {
     return;
   }
 
-  setStatus("Extracting PR description…");
+  setStatus("Extracting PR description & code…");
   els.btnL4Auto.disabled = true;
   els.btnL4Auto.textContent = "Extracting…";
 
   try {
-    // Send message to content script via background
+    // 1. Get PR description from content script
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
       setStatus("No active tab found");
@@ -857,24 +900,40 @@ els.btnL4Auto.addEventListener("click", async () => {
     const description = response?.payload?.description ?? "";
     const codeComments: string[] = response?.payload?.codeComments ?? [];
 
-    // Combine description + comments for analysis
     let textToAnalyze = description;
     if (codeComments.length > 0) {
       textToAnalyze += "\n\n" + codeComments.join("\n\n");
     }
 
-    if (textToAnalyze.trim().length < 50) {
-      setStatus("PR description too short to analyze");
+    // 2. Fetch diff if not already cached
+    if (!cachedDiffText && currentPR) {
+      try {
+        const diffResp: any = await chrome.runtime.sendMessage({
+          action: ACTION.REQUEST_PR_DIFF,
+          payload: {
+            owner: currentPR.owner,
+            repo: currentPR.repo,
+            prNumber: currentPR.prNumber,
+          },
+        });
+        if (diffResp?.payload?.diff) {
+          cachedDiffText = diffResp.payload.diff;
+        }
+      } catch { /* diff fetch optional */ }
+    }
+
+    if (textToAnalyze.trim().length < 50 && !cachedDiffText) {
+      setStatus("PR description too short and no code diff available");
       els.btnL4Auto.disabled = false;
-      els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description';
+      els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description & Code';
       return;
     }
 
-    await runL4Analysis(textToAnalyze);
+    await runL4Analysis(textToAnalyze, cachedDiffText ?? undefined);
   } catch (err) {
-    setStatus("Failed to extract PR description");
+    setStatus("Failed to extract PR data");
     els.btnL4Auto.disabled = false;
-    els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description';
+    els.btnL4Auto.innerHTML = '<span class="gx-btn__icon">🧠</span> Analyze PR Description & Code';
   }
 });
 
@@ -1107,9 +1166,9 @@ els.btnFullScan.addEventListener("click", async () => {
       setMasterLayerState("l3", "error");
     }
 
-    // ── Step 3: L4 AI Text Detection ──
+    // ── Step 3: L4 AI Text Detection (description + code) ──
     setMasterLayerState("l4", "running");
-    setStatus("[3/4] Running AI text detection…");
+    setStatus("[3/4] Running AI text detection on description & code…");
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1126,8 +1185,8 @@ els.btnFullScan.addEventListener("click", async () => {
           textToAnalyze += "\n\n" + codeComments.join("\n\n");
         }
 
-        if (textToAnalyze.trim().length >= 50) {
-          await runL4Analysis(textToAnalyze);
+        if (textToAnalyze.trim().length >= 50 || cachedDiffText) {
+          await runL4Analysis(textToAnalyze, cachedDiffText ?? undefined);
         } else {
           setMasterLayerState("l4", "pending");
         }
