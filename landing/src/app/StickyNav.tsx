@@ -5,16 +5,23 @@ import Image from "next/image";
 
 export default function StickyNav() {
   const [scrolledPastHero, setScrolledPastHero] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
 
   useEffect(() => {
     const handleScroll = () => {
-      /* Trigger once user scrolls past ~90vh */
+      /* Hero detection */
       const threshold = window.innerHeight * 0.85;
       setScrolledPastHero(window.scrollY > threshold);
+
+      /* Page scroll progress (0–100) */
+      const docHeight =
+        document.documentElement.scrollHeight - window.innerHeight;
+      const progress = docHeight > 0 ? (window.scrollY / docHeight) * 100 : 0;
+      setScrollProgress(Math.min(progress, 100));
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll(); // check initial position
+    handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -26,6 +33,17 @@ export default function StickyNav() {
           : "border-transparent bg-background/60 backdrop-blur-md translate-y-0"
       }`}
     >
+      {/* ── Scroll Progress Bar (2px) ──────────────────────────── */}
+      <div
+        className="absolute bottom-0 left-0 h-[2px]"
+        style={{
+          width: `${scrollProgress}%`,
+          background: "var(--accent)",
+          transition: "width 0.1s linear",
+        }}
+        aria-hidden="true"
+      />
+
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         {/* Logo */}
         <a
@@ -84,28 +102,48 @@ export default function StickyNav() {
             Privacy
           </a>
 
-          {/* Sticky CTA — slides in after hero */}
-          <a
-            href="https://chromewebstore.google.com/detail/gitx1-pr-moderator"
-            id="nav-cta-chrome"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white shadow-md transition-all duration-500 hover:bg-accent-hover hover:shadow-lg hover:scale-[1.03] active:scale-[0.97] ${
+          {/* Sticky CTA + Trust Signal — slides in after hero */}
+          <div
+            className={`flex items-center gap-2.5 transition-all duration-500 ${
               scrolledPastHero
                 ? "opacity-100 translate-x-0"
                 : "opacity-0 translate-x-4 pointer-events-none"
             }`}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-              <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
-              <line x1="12" y1="8" x2="21" y2="5" stroke="currentColor" strokeWidth="1.5" />
-              <line x1="8.5" y1="14" x2="2" y2="17" stroke="currentColor" strokeWidth="1.5" />
-              <line x1="15.5" y1="14" x2="17" y2="22" stroke="currentColor" strokeWidth="1.5" />
-            </svg>
-            <span className="hidden min-[480px]:inline">Add to Chrome</span>
-            <span className="min-[480px]:hidden">Install</span>
-          </a>
+            {/* Trust Signal */}
+            <span
+              className={`hidden items-center gap-1.5 rounded-full border border-accent/20 bg-accent-light px-3 py-1.5 text-[11px] font-semibold text-accent transition-all duration-500 min-[560px]:flex ${
+                scrolledPastHero
+                  ? "opacity-100 translate-x-0"
+                  : "opacity-0 translate-x-2"
+              }`}
+              style={{ transitionDelay: scrolledPastHero ? "200ms" : "0ms" }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+              </svg>
+              5k+ Installs
+            </span>
+
+            {/* CTA Button */}
+            <a
+              href="https://chromewebstore.google.com/detail/gitx1-pr-moderator"
+              id="nav-cta-chrome"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white shadow-md transition-all duration-300 hover:bg-accent-hover hover:shadow-lg hover:scale-[1.03] active:scale-[0.97]"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="12" y1="8" x2="21" y2="5" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="8.5" y1="14" x2="2" y2="17" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="15.5" y1="14" x2="17" y2="22" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+              <span className="hidden min-[480px]:inline">Add to Chrome</span>
+              <span className="min-[480px]:hidden">Install</span>
+            </a>
+          </div>
         </div>
       </nav>
     </header>
