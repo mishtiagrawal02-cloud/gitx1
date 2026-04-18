@@ -415,6 +415,62 @@ export default function Home() {
           </div>
         </section>
 
+        {/* ── Research & Explainer Section ───────────────────── */}
+        <section id="research" className="border-t border-border/60 bg-background py-24 sm:py-32">
+          <div className="mx-auto max-w-5xl px-6 text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-heading sm:text-4xl">
+              Understand the Science Behind GitX1
+            </h2>
+            <p className="mt-4 text-lg text-foreground-muted">
+              Watch our explainer video and read the full research paper that powers the ultimate AI slop detection engine.
+            </p>
+            
+            <div className="mt-12 flex flex-col items-center gap-10 lg:flex-row lg:items-start lg:justify-between">
+              {/* Video Player */}
+              <div className="w-full lg:w-3/5 aspect-video overflow-hidden rounded-2xl border border-border bg-card-bg shadow-lg">
+                <video 
+                  controls 
+                  className="h-full w-full object-cover"
+                  src="/explainer-video.mp4"
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+
+              {/* Research Paper Download */}
+              <div className="flex w-full flex-col items-center justify-center space-y-6 lg:w-2/5 lg:py-10">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-light text-accent">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <h3 className="text-xl font-bold text-heading">Read the Research Paper</h3>
+                  <p className="mt-2 text-sm text-foreground-muted">
+                    Dive deep into the multi-signal algorithm, dataset curation, and the WASM engine design.
+                  </p>
+                </div>
+                <a
+                  href="/research-paper.pdf"
+                  download
+                  className="inline-flex h-12 items-center gap-2 rounded-full bg-accent px-6 text-sm font-semibold text-white shadow-md transition-all duration-300 hover:bg-accent-hover hover:scale-[1.03] active:scale-[0.98]"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Download PDF
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* ── Privacy & Security Section ─────────────────────── */}
         <section id="privacy" className="relative py-28 sm:py-36 overflow-hidden">
           {/* Background accent glow */}
