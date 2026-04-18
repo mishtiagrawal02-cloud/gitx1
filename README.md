@@ -19,11 +19,9 @@ Protect your open-source repositories from low-effort, AI-generated pull request
 
 Check out this quick demonstration of how GitX1 seamlessly integrates into your GitHub workflow:
 
-<p align="center">
-  <video src="https://github.com/mishtiagrawal02-cloud/gitx1/raw/main/assets/demo-video.mp4" controls width="100%"></video>
-</p>
+https://github.com/mishtiagrawal02-cloud/gitx1/assets/demo-video.mp4
 
-*(If the video doesn't load automatically, [click here to view the raw mp4 file](https://github.com/mishtiagrawal02-cloud/gitx1/raw/main/assets/demo-video.mp4).)*
+*(If the video doesn't load automatically, [click here to view the raw mp4 file](assets/demo-video.mp4).)*
 
 ---
 
